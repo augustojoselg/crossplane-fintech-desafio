@@ -1,0 +1,679 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fintech-platform-composition
+  labels:
+    crossplane.io/xrd: fintechplatforms.platform.fintech.crossplane.io
+spec:
+  compositeTypeRef:
+    apiVersion: platform.fintech.crossplane.io/v1alpha1
+    kind: FintechPlatform
+  writeConnectionSecretsToNamespace: crossplane-system
+  patchSets:
+    - name: common-labels
+      patches:
+        - fromFieldPath: metadata.labels
+        - fromFieldPath: spec.platformName
+          toFieldPath: metadata.labels["platform.fintech.crossplane.io/platform"]
+        - fromFieldPath: spec.environment
+          toFieldPath: metadata.labels["platform.fintech.crossplane.io/environment"]
+    - name: common-annotations
+      patches:
+        - fromFieldPath: spec.platformName
+          toFieldPath: metadata.annotations["platform.fintech.crossplane.io/platform"]
+        - fromFieldPath: spec.environment
+          toFieldPath: metadata.annotations["platform.fintech.crossplane.io/environment"]
+  resources:
+    # =============================================================================
+    # VPC E COMPONENTES DE REDE
+    # =============================================================================
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: VPC
+        spec:
+          forProvider:
+            region: us-east-1
+            cidrBlock: "10.0.0.0/16"
+            enableDnsHostnames: true
+            enableDnsSupport: true
+            tags:
+              - key: Name
+                value: "fintech-vpc"
+              - key: Platform
+                value: "fintech"
+              - key: Environment
+                value: "production"
+      patches:
+        - fromFieldPath: spec.networkConfig.vpcCidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.platformName
+          toFieldPath: spec.forProvider.tags[0].value
+        - fromFieldPath: spec.environment
+          toFieldPath: spec.forProvider.tags[2].value
+      connectionDetails:
+        - name: vpcId
+          value: "vpc-{{ .status.atProvider.vpcId }}"
+
+    - name: internet-gateway
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: InternetGateway
+        spec:
+          forProvider:
+            region: us-east-1
+            tags:
+              - key: Name
+                value: "fintech-igw"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+
+    - name: internet-gateway-attachment
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: InternetGatewayAttachment
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            internetGatewayIdSelector:
+              matchControllerRef: true
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+        - internet-gateway
+
+    # =============================================================================
+    # SUBNETS PÚBLICAS
+    # =============================================================================
+    - name: public-subnet-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.1.0/24"
+            availabilityZone: "us-east-1a"
+            mapPublicIpOnLaunch: true
+            tags:
+              - key: Name
+                value: "fintech-public-subnet-1"
+              - key: Type
+                value: "Public"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.publicSubnets[0].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.publicSubnets[0].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    - name: public-subnet-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.2.0/24"
+            availabilityZone: "us-east-1b"
+            mapPublicIpOnLaunch: true
+            tags:
+              - key: Name
+                value: "fintech-public-subnet-2"
+              - key: Type
+                value: "Public"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.publicSubnets[1].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.publicSubnets[1].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    # =============================================================================
+    # SUBNETS PRIVADAS
+    # =============================================================================
+    - name: private-subnet-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.10.0/24"
+            availabilityZone: "us-east-1a"
+            mapPublicIpOnLaunch: false
+            tags:
+              - key: Name
+                value: "fintech-private-subnet-1"
+              - key: Type
+                value: "Private"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.privateSubnets[0].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.privateSubnets[0].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    - name: private-subnet-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.11.0/24"
+            availabilityZone: "us-east-1b"
+            mapPublicIpOnLaunch: false
+            tags:
+              - key: Name
+                value: "fintech-private-subnet-2"
+              - key: Type
+                value: "Private"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.privateSubnets[1].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.privateSubnets[1].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    # =============================================================================
+    # SUBNETS DE BANCO DE DADOS
+    # =============================================================================
+    - name: database-subnet-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.20.0/24"
+            availabilityZone: "us-east-1a"
+            mapPublicIpOnLaunch: false
+            tags:
+              - key: Name
+                value: "fintech-database-subnet-1"
+              - key: Type
+                value: "Database"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.databaseSubnets[0].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.databaseSubnets[0].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    - name: database-subnet-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            cidrBlock: "10.0.21.0/24"
+            availabilityZone: "us-east-1b"
+            mapPublicIpOnLaunch: false
+            tags:
+              - key: Name
+                value: "fintech-database-subnet-2"
+              - key: Type
+                value: "Database"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.networkConfig.databaseSubnets[1].cidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.networkConfig.databaseSubnets[1].availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+      dependsOn:
+        - vpc
+
+    # =============================================================================
+    # ROUTE TABLES
+    # =============================================================================
+    - name: public-route-table
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: RouteTable
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              - key: Name
+                value: "fintech-public-rt"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+
+    - name: public-route
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Route
+        spec:
+          forProvider:
+            region: us-east-1
+            routeTableIdSelector:
+              matchControllerRef: true
+            destinationCidrBlock: "0.0.0.0/0"
+            gatewayIdSelector:
+              matchControllerRef: true
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - public-route-table
+        - internet-gateway
+
+    # =============================================================================
+    # SECURITY GROUPS
+    # =============================================================================
+    - name: alb-security-group
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            description: "Security group for Application Load Balancer"
+            ingress:
+              - fromPort: 80
+                toPort: 80
+                ipProtocol: tcp
+                ipRanges:
+                  - cidrIp: "0.0.0.0/0"
+                    description: "HTTP from anywhere"
+              - fromPort: 443
+                toPort: 443
+                ipProtocol: tcp
+                ipRanges:
+                  - cidrIp: "0.0.0.0/0"
+                    description: "HTTPS from anywhere"
+            egress:
+              - fromPort: 0
+                toPort: 0
+                ipProtocol: "-1"
+                ipRanges:
+                  - cidrIp: "0.0.0.0/0"
+                    description: "All outbound traffic"
+            tags:
+              - key: Name
+                value: "fintech-alb-sg"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+
+    - name: app-security-group
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            description: "Security group for application pods"
+            ingress:
+              - fromPort: 8080
+                toPort: 8081
+                ipProtocol: tcp
+                sourceSecurityGroupIds:
+                  - "sg-{{ .status.atProvider.securityGroupId }}"
+                description: "Application ports from ALB"
+            egress:
+              - fromPort: 0
+                toPort: 0
+                ipProtocol: "-1"
+                ipRanges:
+                  - cidrIp: "0.0.0.0/0"
+                    description: "All outbound traffic"
+            tags:
+              - key: Name
+                value: "fintech-app-sg"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+        - alb-security-group
+
+    - name: database-security-group
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            description: "Security group for database and cache"
+            ingress:
+              - fromPort: 5432
+                toPort: 5432
+                ipProtocol: tcp
+                sourceSecurityGroupIds:
+                  - "sg-{{ .status.atProvider.securityGroupId }}"
+                description: "PostgreSQL from app"
+              - fromPort: 6379
+                toPort: 6379
+                ipProtocol: tcp
+                sourceSecurityGroupIds:
+                  - "sg-{{ .status.atProvider.securityGroupId }}"
+                description: "Redis from app"
+            egress:
+              - fromPort: 0
+                toPort: 0
+                ipProtocol: "-1"
+                ipRanges:
+                  - cidrIp: "0.0.0.0/0"
+                    description: "All outbound traffic"
+            tags:
+              - key: Name
+                value: "fintech-database-sg"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+        - app-security-group
+
+    # =============================================================================
+    # CLUSTER EKS
+    # =============================================================================
+    - name: eks-cluster
+      base:
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: Cluster
+        spec:
+          forProvider:
+            region: us-east-1
+            roleArn: "arn:aws:iam::${AWS_ACCOUNT_ID}:role/AmazonEKSClusterRole"
+            version: "1.28"
+            resourcesVpcConfig:
+              securityGroupIds:
+                - "sg-{{ .status.atProvider.securityGroupId }}"
+              subnetIds:
+                - "subnet-{{ .status.atProvider.subnetId }}"
+                - "subnet-{{ .status.atProvider.subnetId }}"
+            encryptionConfig:
+              - provider:
+                  keyArn: "arn:aws:kms:us-east-1:${AWS_ACCOUNT_ID}:key/alias/eks"
+                resources:
+                  - secrets
+            logging:
+              clusterLogging:
+                - types:
+                    - api
+                    - audit
+                    - authenticator
+                    - controllerManager
+                    - scheduler
+                  enabled: true
+            tags:
+              - key: Name
+                value: "fintech-eks-cluster"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.awsConfig.accountId
+          toFieldPath: spec.forProvider.roleArn
+        - fromFieldPath: spec.awsConfig.accountId
+          toFieldPath: spec.forProvider.encryptionConfig[0].provider.keyArn
+      dependsOn:
+        - vpc
+        - private-subnet-1
+        - private-subnet-2
+        - app-security-group
+
+    # =============================================================================
+    # NODE GROUPS
+    # =============================================================================
+    - name: eks-node-group
+      base:
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: NodeGroup
+        spec:
+          forProvider:
+            region: us-east-1
+            clusterName: "fintech-eks-cluster"
+            nodeRole: "arn:aws:iam::${AWS_ACCOUNT_ID}:role/AmazonEKSNodeRole"
+            subnets:
+              - "subnet-{{ .status.atProvider.subnetId }}"
+              - "subnet-{{ .status.atProvider.subnetId }}"
+            instanceTypes:
+              - "t3.medium"
+            scalingConfig:
+              minSize: 2
+              maxSize: 10
+              desiredSize: 3
+            updateConfig:
+              maxUnavailable: 1
+            tags:
+              - key: Name
+                value: "fintech-eks-nodes"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.awsConfig.accountId
+          toFieldPath: spec.forProvider.nodeRole
+      dependsOn:
+        - eks-cluster
+        - private-subnet-1
+        - private-subnet-2
+
+    # =============================================================================
+    # RDS POSTGRESQL
+    # =============================================================================
+    - name: rds-postgresql
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: RDSInstance
+        spec:
+          forProvider:
+            region: us-east-1
+            dbInstanceClass: "db.r6g.large"
+            engine: "postgres"
+            engineVersion: "15.4"
+            allocatedStorage: 100
+            storageType: "gp3"
+            storageEncrypted: true
+            multiAZ: true
+            backupRetentionPeriod: 7
+            deletionProtection: true
+            dbName: "fintech_db"
+            masterUsername: "admin"
+            masterPasswordSecretRef:
+              name: rds-secret
+              key: password
+            vpcSecurityGroupIds:
+              - "sg-{{ .status.atProvider.securityGroupId }}"
+            dbSubnetGroupName: "fintech-db-subnet-group"
+            tags:
+              - key: Name
+                value: "fintech-postgresql"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.databaseConfig.instanceClass
+          toFieldPath: spec.forProvider.dbInstanceClass
+        - fromFieldPath: spec.databaseConfig.engineVersion
+          toFieldPath: spec.forProvider.engineVersion
+        - fromFieldPath: spec.databaseConfig.storageGB
+          toFieldPath: spec.forProvider.allocatedStorage
+        - fromFieldPath: spec.databaseConfig.multiAZ
+          toFieldPath: spec.forProvider.multiAZ
+        - fromFieldPath: spec.databaseConfig.backupRetentionDays
+          toFieldPath: spec.forProvider.backupRetentionPeriod
+        - fromFieldPath: spec.databaseConfig.deletionProtection
+          toFieldPath: spec.forProvider.deletionProtection
+      dependsOn:
+        - database-subnet-1
+        - database-subnet-2
+        - database-security-group
+
+    # =============================================================================
+    # ELASTICACHE REDIS
+    # =============================================================================
+    - name: elasticache-redis
+      base:
+        apiVersion: cache.aws.crossplane.io/v1beta1
+        kind: ReplicationGroup
+        spec:
+          forProvider:
+            region: us-east-1
+            replicationGroupDescription: "Redis cluster for fintech platform"
+            nodeType: "cache.r6g.large"
+            numCacheClusters: 2
+            multiAZEnabled: true
+            automaticFailoverEnabled: true
+            engine: "redis"
+            engineVersion: "7.0"
+            port: 6379
+            subnetGroupName: "fintech-cache-subnet-group"
+            securityGroupIds:
+              - "sg-{{ .status.atProvider.securityGroupId }}"
+            tags:
+              - key: Name
+                value: "fintech-redis"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+        - fromFieldPath: spec.cacheConfig.nodeType
+          toFieldPath: spec.forProvider.nodeType
+        - fromFieldPath: spec.cacheConfig.numCacheNodes
+          toFieldPath: spec.forProvider.numCacheClusters
+        - fromFieldPath: spec.cacheConfig.multiAZ
+          toFieldPath: spec.forProvider.multiAZEnabled
+        - fromFieldPath: spec.cacheConfig.engineVersion
+          toFieldPath: spec.forProvider.engineVersion
+      dependsOn:
+        - database-subnet-1
+        - database-subnet-2
+        - database-security-group
+
+    # =============================================================================
+    # APPLICATION LOAD BALANCER
+    # =============================================================================
+    - name: alb
+      base:
+        apiVersion: elbv2.aws.crossplane.io/v1beta1
+        kind: LoadBalancer
+        spec:
+          forProvider:
+            region: us-east-1
+            type: "application"
+            scheme: "internet-facing"
+            ipAddressType: "ipv4"
+            subnets:
+              - "subnet-{{ .status.atProvider.subnetId }}"
+              - "subnet-{{ .status.atProvider.subnetId }}"
+            securityGroups:
+              - "sg-{{ .status.atProvider.securityGroupId }}"
+            tags:
+              - key: Name
+                value: "fintech-alb"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - public-subnet-1
+        - public-subnet-2
+        - alb-security-group
+
+    # =============================================================================
+    # ROUTE53 HOSTED ZONE
+    # =============================================================================
+    - name: route53-zone
+      base:
+        apiVersion: route53.aws.crossplane.io/v1alpha1
+        kind: HostedZone
+        spec:
+          forProvider:
+            name: "fintech.local"
+            comment: "Hosted zone for fintech platform"
+            tags:
+              - key: Name
+                value: "fintech-zone"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.domain
+          toFieldPath: spec.forProvider.name
+      dependsOn:
+        - vpc
+
+    # =============================================================================
+    # AWS SECRETS MANAGER
+    # =============================================================================
+    - name: platform-secrets
+      base:
+        apiVersion: secretsmanager.aws.crossplane.io/v1alpha1
+        kind: Secret
+        spec:
+          forProvider:
+            region: us-east-1
+            description: "Secrets for fintech platform"
+            tags:
+              - key: Name
+                value: "fintech-secrets"
+              - key: Platform
+                value: "fintech"
+      patches:
+        - fromFieldPath: spec.awsConfig.region
+          toFieldPath: spec.forProvider.region
+      dependsOn:
+        - vpc
+
+  # =============================================================================
+  # CONFIGURAÇÕES DE SEGURANÇA E COMPLIANCE
+  # =============================================================================
+  writeConnectionSecretsToNamespace: crossplane-system

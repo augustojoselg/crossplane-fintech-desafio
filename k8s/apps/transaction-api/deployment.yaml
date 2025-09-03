@@ -1,0 +1,272 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-api
+  namespace: fintech-platform
+  labels:
+    app: transaction-api
+    platform: fintech
+    environment: production
+    tier: application
+  annotations:
+    platform.fintech.crossplane.io/description: "Deployment do Transaction API Service"
+    platform.fintech.crossplane.io/owner: "platform-team"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: transaction-api
+  template:
+    metadata:
+      labels:
+        app: transaction-api
+        platform: fintech
+        environment: production
+        tier: application
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        checksum/config: "{{ .Values.configChecksum }}"
+    spec:
+      # =============================================================================
+      # CONFIGURAÇÕES DE SEGURANÇA
+      # =============================================================================
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      # Pod Security Standards
+      automountServiceAccountToken: false
+      
+      # =============================================================================
+      # SERVICE ACCOUNT
+      # =============================================================================
+      serviceAccountName: transaction-api-sa
+      
+      # =============================================================================
+      # CONTAINERS
+      # =============================================================================
+      containers:
+        - name: transaction-api
+          image: fintech/transaction-api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          
+          # =============================================================================
+          # HEALTH CHECKS
+          # =============================================================================
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+            successThreshold: 1
+          
+          # =============================================================================
+          # RECURSOS E LIMITES
+          # =============================================================================
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          
+          # =============================================================================
+          # VARIÁVEIS DE AMBIENTE
+          # =============================================================================
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: transaction-api-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: transaction-api-secrets
+                  key: redis-url
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://notification-service:8081/notify"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: "/tmp"
+            - name: STRUCTLOG_LEVEL
+              value: "INFO"
+            - name: STRUCTLOG_FORMAT
+              value: "json"
+            - name: ENABLE_METRICS
+              value: "true"
+            - name: METRICS_PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: JAEGER_AGENT_HOST
+              value: "jaeger-agent.monitoring.svc.cluster.local"
+            - name: JAEGER_AGENT_PORT
+              value: "6831"
+            - name: REDIS_TTL
+              value: "3600"
+            - name: REDIS_MAX_CONNECTIONS
+              value: "20"
+            - name: REDIS_CONNECT_TIMEOUT
+              value: "5"
+            - name: REDIS_READ_TIMEOUT
+              value: "3"
+            - name: REDIS_WRITE_TIMEOUT
+              value: "3"
+            - name: DB_POOL_SIZE
+              value: "20"
+            - name: DB_MAX_OVERFLOW
+              value: "30"
+            - name: DB_POOL_TIMEOUT
+              value: "30"
+            - name: DB_POOL_RECYCLE
+              value: "3600"
+            - name: API_HOST
+              value: "0.0.0.0"
+            - name: API_PORT
+              value: "8080"
+            - name: API_WORKERS
+              value: "4"
+            - name: API_BACKLOG
+              value: "2048"
+            - name: API_TIMEOUT
+              value: "60"
+            - name: WEBHOOK_TIMEOUT
+              value: "10"
+            - name: WEBHOOK_RETRY_ATTEMPTS
+              value: "3"
+            - name: WEBHOOK_RETRY_DELAY
+              value: "1"
+            - name: VALIDATE_INPUT
+              value: "true"
+            - name: MAX_REQUEST_SIZE
+              value: "1048576"  # 1MB
+            - name: RATE_LIMIT_ENABLED
+              value: "true"
+            - name: RATE_LIMIT_REQUESTS
+              value: "100"
+            - name: RATE_LIMIT_WINDOW
+              value: "60"
+          
+          # =============================================================================
+          # CONFIGURAÇÕES DE SEGURANÇA DO CONTAINER
+          # =============================================================================
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          
+          # =============================================================================
+          # VOLUMES PARA CONFIGURAÇÕES
+          # =============================================================================
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+      
+      # =============================================================================
+      # VOLUMES
+      # =============================================================================
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: "100Mi"
+        - name: config
+          configMap:
+            name: transaction-api-config
+      
+      # =============================================================================
+      # AFFINITY E ANTI-AFFINITY
+      # =============================================================================
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - transaction-api
+                topologyKey: kubernetes.io/hostname
+        
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: platform.fintech.crossplane.io/node-type
+                    operator: In
+                    values:
+                      - application
+      
+      # =============================================================================
+      # TOLERATIONS
+      # =============================================================================
+      tolerations:
+        - key: "platform.fintech.crossplane.io/taint"
+          operator: "Equal"
+          value: "application"
+          effect: "NoSchedule"
+      
+      # =============================================================================
+      # IMAGE PULL SECRETS
+      # =============================================================================
+      imagePullSecrets:
+        - name: fintech-registry-secret

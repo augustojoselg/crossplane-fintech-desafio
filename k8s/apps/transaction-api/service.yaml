@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-api
+  namespace: fintech-platform
+  labels:
+    app: transaction-api
+    platform: fintech
+    environment: production
+    tier: application
+  annotations:
+    platform.fintech.crossplane.io/description: "Service para o Transaction API Service"
+    platform.fintech.crossplane.io/owner: "platform-team"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  # =============================================================================
+  # CONFIGURAÇÕES DO SERVICE
+  # =============================================================================
+  type: ClusterIP
+  sessionAffinity: None
+  
+  # =============================================================================
+  # SELEÇÃO DE PODS
+  # =============================================================================
+  selector:
+    app: transaction-api
+    platform: fintech
+    environment: production
+  
+  # =============================================================================
+  # PORTAS
+  # =============================================================================
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+      appProtocol: http
+    
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      appProtocol: http
+  
+  # =============================================================================
+  # CONFIGURAÇÕES DE SESSION AFFINITY
+  # =============================================================================
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 horas
+  
+  # =============================================================================
+  # CONFIGURAÇÕES DE LOAD BALANCING
+  # =============================================================================
+  externalTrafficPolicy: Local
+  internalTrafficPolicy: Local

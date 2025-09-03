@@ -1,0 +1,55 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws
+  annotations:
+    crossplane.io/package: xpkg.upbound.io/crossplane-contrib/provider-aws:v0.37.0
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-aws:v0.37.0
+  controllerConfigRef:
+    name: aws-controller-config
+---
+apiVersion: pkg.crossplane.io/v1alpha1
+kind: ControllerConfig
+metadata:
+  name: aws-controller-config
+spec:
+  env:
+    - name: AWS_REGION
+      value: "us-east-1"
+    - name: AWS_DEFAULT_REGION
+      value: "us-east-1"
+  serviceAccountName: crossplane-provider-aws
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-provider-aws
+  namespace: crossplane-system
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/CrossplaneProviderAWSRole
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane-provider-aws
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["crossplane.io"]
+    resources: ["compositions", "compositeresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crossplane-provider-aws
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crossplane-provider-aws
+subjects:
+  - kind: ServiceAccount
+    name: crossplane-provider-aws
+    namespace: crossplane-system

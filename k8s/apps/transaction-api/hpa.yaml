@@ -1,0 +1,113 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: transaction-api-hpa
+  namespace: fintech-platform
+  labels:
+    app: transaction-api
+    platform: fintech
+    environment: production
+    tier: application
+  annotations:
+    platform.fintech.crossplane.io/description: "HPA para escalabilidade automática do Transaction API Service"
+    platform.fintech.crossplane.io/owner: "platform-team"
+spec:
+  # =============================================================================
+  # CONFIGURAÇÕES DE ESCALABILIDADE
+  # =============================================================================
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: transaction-api
+  
+  # =============================================================================
+  # LIMITES DE ESCALA
+  # =============================================================================
+  minReplicas: 2
+  maxReplicas: 20
+  
+  # =============================================================================
+  # MÉTRICAS DE ESCALA
+  # =============================================================================
+  metrics:
+    # =============================================================================
+    # MÉTRICA DE CPU
+    # =============================================================================
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    
+    # =============================================================================
+    # MÉTRICA DE MEMÓRIA
+    # =============================================================================
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    
+    # =============================================================================
+    # MÉTRICA CUSTOMIZADA - REQUISIÇÕES POR SEGUNDO
+    # =============================================================================
+    - type: Object
+      object:
+        metric:
+          name: requests-per-second
+        describedObject:
+          apiVersion: v1
+          kind: Service
+          name: transaction-api
+        target:
+          type: AverageValue
+          averageValue: 100
+    
+    # =============================================================================
+    # MÉTRICA CUSTOMIZADA - LATÊNCIA
+    # =============================================================================
+    - type: Object
+      object:
+        metric:
+          name: request-duration-95th-percentile
+        describedObject:
+          apiVersion: v1
+          kind: Service
+          name: transaction-api
+        target:
+          type: AverageValue
+          averageValue: 500  # 500ms
+  
+  # =============================================================================
+  # COMPORTAMENTO DE ESCALA
+  # =============================================================================
+  behavior:
+    # =============================================================================
+    # COMPORTAMENTO DE ESCALA PARA CIMA
+    # =============================================================================
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    
+    # =============================================================================
+    # COMPORTAMENTO DE ESCALA PARA BAIXO
+    # =============================================================================
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Min

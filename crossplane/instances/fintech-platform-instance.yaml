@@ -1,0 +1,78 @@
+apiVersion: platform.fintech.crossplane.io/v1alpha1
+kind: FintechPlatform
+metadata:
+  name: fintech-platform-prod
+  namespace: crossplane-system
+  labels:
+    platform.fintech.crossplane.io/platform: fintech-platform
+    platform.fintech.crossplane.io/environment: production
+    platform.fintech.crossplane.io/version: v1.0.0
+  annotations:
+    platform.fintech.crossplane.io/platform: fintech-platform
+    platform.fintech.crossplane.io/environment: production
+    platform.fintech.crossplane.io/created-by: crossplane
+    platform.fintech.crossplane.io/created-date: "2025-01-02"
+spec:
+  platformName: fintech-platform
+  environment: production
+  domain: fintech.local
+  
+  awsConfig:
+    region: us-east-1
+    accountId: "123456789012"  # Substitua pelo seu Account ID
+    profile: default
+  
+  networkConfig:
+    vpcCidr: "10.0.0.0/16"
+    publicSubnets:
+      - cidr: "10.0.1.0/24"
+        availabilityZone: "us-east-1a"
+      - cidr: "10.0.2.0/24"
+        availabilityZone: "us-east-1b"
+    privateSubnets:
+      - cidr: "10.0.10.0/24"
+        availabilityZone: "us-east-1a"
+      - cidr: "10.0.11.0/24"
+        availabilityZone: "us-east-1b"
+    databaseSubnets:
+      - cidr: "10.0.20.0/24"
+        availabilityZone: "us-east-1a"
+      - cidr: "10.0.21.0/24"
+        availabilityZone: "us-east-1b"
+  
+  databaseConfig:
+    engine: postgres
+    engineVersion: "15.4"
+    instanceClass: "db.r6g.large"
+    storageGB: 100
+    multiAZ: true
+    backupRetentionDays: 7
+    deletionProtection: true
+  
+  cacheConfig:
+    engine: redis
+    engineVersion: "7.0"
+    nodeType: "cache.r6g.large"
+    numCacheNodes: 2
+    multiAZ: true
+  
+  monitoringConfig:
+    enablePrometheus: true
+    enableGrafana: true
+    enableELK: true
+    enableJaeger: true
+    prometheusRetentionDays: 15
+    elasticsearchStorageGB: 100
+  
+  securityConfig:
+    enablePodSecurityStandards: true
+    enableNetworkPolicies: true
+    enableRBAC: true
+    enableSSLTLS: true
+    enableVulnerabilityScanning: true
+  
+  scalingConfig:
+    hpaCPUTarget: 70
+    hpaMemoryTarget: 80
+    hpaMinReplicas: 2
+    hpaMaxReplicas: 20

@@ -1,0 +1,165 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: transaction-api-ingress
+  namespace: fintech-platform
+  labels:
+    app: transaction-api
+    platform: fintech
+    environment: production
+    tier: application
+  annotations:
+    platform.fintech.crossplane.io/description: "Ingress para o Transaction API Service"
+    platform.fintech.crossplane.io/owner: "platform-team"
+    
+    # =============================================================================
+    # ANNOTATIONS DO NGINX INGRESS CONTROLLER
+    # =============================================================================
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE SEGURANÇA
+    # =============================================================================
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/cors-expose-headers: "Content-Length,Content-Range"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE RATE LIMITING
+    # =============================================================================
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "10"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE BUFFER
+    # =============================================================================
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE TIMEOUT
+    # =============================================================================
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE LOGGING
+    # =============================================================================
+    nginx.ingress.kubernetes.io/enable-access-log: "true"
+    nginx.ingress.kubernetes.io/access-log-format: |
+      '$remote_addr - $remote_user [$time_local] "$request" '
+      '$status $body_bytes_sent "$http_referer" '
+      '"$http_user_agent" "$http_x_forwarded_for" '
+      'rt=$request_time uct="$upstream_connect_time" '
+      'uht="$upstream_header_time" urt="$upstream_response_time"'
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE HEADERS
+    # =============================================================================
+    nginx.ingress.kubernetes.io/server-snippet: |
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';" always;
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE AUTHENTICATION
+    # =============================================================================
+    nginx.ingress.kubernetes.io/auth-url: "https://auth.fintech.local/validate"
+    nginx.ingress.kubernetes.io/auth-signin: "https://auth.fintech.local/signin"
+    nginx.ingress.kubernetes.io/auth-snippet: |
+      auth_request_set $auth_resp_jwt $upstream_http_authorization;
+      auth_request_set $auth_resp_user $upstream_http_x_user;
+      auth_request_set $auth_resp_email $upstream_http_x_email;
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE MONITORING
+    # =============================================================================
+    nginx.ingress.kubernetes.io/enable-metrics: "true"
+    nginx.ingress.kubernetes.io/metrics-port: "10254"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE CANARY
+    # =============================================================================
+    nginx.ingress.kubernetes.io/canary: "false"
+    nginx.ingress.kubernetes.io/canary-weight: "0"
+    
+    # =============================================================================
+    # CONFIGURAÇÕES DE SESSION AFFINITY
+    # =============================================================================
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+    nginx.ingress.kubernetes.io/session-cookie-secure: "true"
+    nginx.ingress.kubernetes.io/session-cookie-httponly: "true"
+    nginx.ingress.kubernetes.io/session-cookie-samesite: "Strict"
+spec:
+  # =============================================================================
+  # CONFIGURAÇÕES DE INGRESS CLASS
+  # =============================================================================
+  ingressClassName: nginx
+  
+  # =============================================================================
+  # CONFIGURAÇÕES DE TLS
+  # =============================================================================
+  tls:
+    - hosts:
+        - api.fintech.local
+        - transactions.fintech.local
+      secretName: fintech-tls-secret
+  
+  # =============================================================================
+  # REGRAS DE ROTEAMENTO
+  # =============================================================================
+  rules:
+    # =============================================================================
+    # REGRA PRINCIPAL - API DE TRANSAÇÕES
+    # =============================================================================
+    - host: api.fintech.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: transaction-api
+                port:
+                  number: 80
+    
+    # =============================================================================
+    # REGRA ALTERNATIVA - SUBDOMÍNIO DE TRANSAÇÕES
+    # =============================================================================
+    - host: transactions.fintech.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: transaction-api
+                port:
+                  number: 80
+    
+    # =============================================================================
+    # REGRA PARA MÉTRICAS (INTERNA)
+    # =============================================================================
+    - host: metrics.fintech.local
+      http:
+        paths:
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: transaction-api
+                port:
+                  number: 8080
